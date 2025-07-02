@@ -53,7 +53,11 @@ def collect_train_data(network, replay_buffer: ReplayBuffer, num_workers=10):
   with multiprocessing.get_context("spawn").Pool(num_workers) as pool:
     # Each worker gets its own Strategy and collects samples
     sub_buffer_size = replay_buffer.max_size // num_workers
-    args = [(Strategy(), copy.deepcopy(network), sub_buffer_size) for _ in range(num_workers)]
+    args = []
+    for _ in range(num_workers):
+      sub_network = PolicyValueNet(3, 3, num_res_blocks=2).to(device)
+      sub_network.load_state_dict(network.state_dict())
+      args.append((Strategy(), sub_network, sub_buffer_size))
     results = pool.map(_collect_trajectory_worker, args)
     # Flatten and add to replay_buffer
 

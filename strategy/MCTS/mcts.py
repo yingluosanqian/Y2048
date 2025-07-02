@@ -231,15 +231,6 @@ class MCT:
     return policy, value
 
 
-def take_action(env, *, network=None, select_times=10):
-  mct = MCT()
-  tree = Tree(parent=None, env=copy.deepcopy(
-    env), role=Role.PLAYER, score_gain=0.0)
-  policy, value = mct.mct_search(
-    tree, network=network, select_times=select_times)
-  return policy, value, np.argmax(policy)
-
-
 class ReplayBuffer(Dataset):
   def __init__(self, max_size=1024):
     self.max_size = max_size
@@ -299,6 +290,14 @@ class Strategy:
   def __init__(self):
     pass
 
+  def take_action(self, env, *, network=None, select_times=10):
+    mct = MCT()
+    tree = Tree(parent=None, env=copy.deepcopy(
+      env), role=Role.PLAYER, score_gain=0.0)
+    policy, value = mct.mct_search(
+      tree, network=network, select_times=select_times)
+    return policy, value, np.argmax(policy)
+
   def collect_trajectory(self, replay_buffer: ReplayBuffer, *, network=None, gui=False, collect=True):
     """
     Collect a trajectory of actions and rewards from the environment.
@@ -314,7 +313,7 @@ class Strategy:
     done = False
     scores = 0
     while not done:
-      policy, value, action = take_action(env, network=network)
+      policy, value, action = self.take_action(env, network=network)
       if action == -1:  # No valid move
         break
       origin_state = copy.deepcopy(env.observation_space.matrix)
@@ -331,59 +330,6 @@ class Strategy:
       if done:
         break
     return scores
-
-
-def play():
-  """
-  Play a game of 2048 using the DFS strategy.
-  Returns the final score and the number of moves made.
-  """
-  env = Env2048()
-  game_ui = Game2048UI(env, player_mode=False)
-  game_ui.update_idletasks()
-  game_ui.update()
-  env.reset()
-  total_score = 0
-  moves = 0
-
-  while True:
-    _, _, action = take_action(env)
-    if action == -1:  # No valid move
-      # time.sleep(3)
-      break
-    _, reward, done, info = env.step(action)
-    game_ui.score += reward
-    game_ui.update_grid_cells()
-    game_ui.update_idletasks()
-    game_ui.update()
-    time.sleep(0.1)
-    total_score += reward
-    moves += 1
-    if done:
-      #   time.sleep(3)
-      break
-
-  return total_score, moves
-
-
-def eval():
-  # for i in range(1, 10):
-  #   global UCT_CONSTANT
-  #   UCT_CONSTANT = 1 + 1 / i
-  #   avg = np.mean([play()[0] for _ in range(5)])
-  #   print(f"UCT_CONSTANT: {UCT_CONSTANT}, Average Score: {avg}")
-  # for i in range(1, 5):
-  #   UCT_CONSTANT = 1 / i
-  #   avg = np.mean([play()[0] for _ in range(5)])
-  #   print(f"UCT_CONSTANT: {UCT_CONSTANT}, Average Score: {avg}")
-
-  list = [play()[0] for _ in range(10)]
-  avg = np.mean(list)
-  max_v = max(list)
-  min_v = min(list)
-  print(
-    f"UCT_CONSTANT: {UCT_CONSTANT}, Average Score: {avg}, Max: {max_v}, Min: {min_v}")
-
 
 def main():
   # eval()
