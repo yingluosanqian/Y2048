@@ -14,6 +14,7 @@ from game.game_2048_ui import Game2048UI
 from strategy.MCTS.network import PolicyValueNet
 
 from const import const_device as device
+from const import const_boarder_size as boarder_size
 
 ACTION = ["Left", "Right", "Up", "Down"]
 UCT_CONSTANT = 1.1111
@@ -226,11 +227,12 @@ class MCT:
       # Step 4: Backpropagate the score to the root node
       self.backpropagation(expanded_tree, score)
 
-    print("Total moves in MCTS search:", total_moves)
     # Return policy and value
     policy = np.array(
       [child.perf if child is not None else 0.0 for child in root.childs])
     value = root.perf
+    if policy.sum() > 0:
+      policy = policy / policy.sum()
     return policy, value, total_moves
 
 
@@ -288,6 +290,28 @@ class ReplayBuffer(Dataset):
         f.write(
           f"Policy_target: {np.round(policy_target, 2)}, Value_target: {value_target}\n\n")
 
+  def save(self, filename):
+    """
+    Save the replay buffer to a file.
+    """
+    with open(filename, "wb") as f:
+      torch.save({
+        'human_states': self.human_states,
+        'states': self.states,
+        'policy_targets': self.policy_targets,
+        'value_targets': self.value_targets
+      }, f)
+
+  def load(self, filename):
+    """
+    Load the replay buffer from a file.
+    """
+    with open(filename, "rb") as f:
+      data = torch.load(f)
+      self.human_states = data['human_states']
+      self.states = data['states']
+      self.policy_targets = data['policy_targets']
+      self.value_targets = data['value_targets']
 
 class Strategy:
   def __init__(self):
@@ -335,7 +359,6 @@ class Strategy:
         time.sleep(0.05)
       if done:
         break
-    print("total_moves:", total_moves)
     return scores
 
 def main():
@@ -345,10 +368,11 @@ def main():
 
   replay_buffer = ReplayBuffer()
 
-  # network = PolicyValueNet(3, 3, num_res_blocks=6).to(device)  # neural network
-  network = None
+  network = PolicyValueNet(boarder_size, boarder_size, num_res_blocks=2).to(device)  # neural network
+  # network = None
   strategy = Strategy()
-  strategy.collect_trajectory(replay_buffer, network=network, gui=False)
+  score = strategy.collect_trajectory(replay_buffer, network=network, gui=True)
+  print(f"Final Score: {score}")
   # replay_buffer.render()
 
 

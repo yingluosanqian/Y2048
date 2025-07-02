@@ -121,5 +121,4 @@ class Game2048UI(tk.Frame):
 if __name__ == '__main__':
   Game2048UI(
     Env2048(),
-    # mainloop=False,
   )

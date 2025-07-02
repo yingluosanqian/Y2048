@@ -90,6 +90,7 @@ class PolicyValueNet(nn.Module):
     return self.policy_value_heads(x)
 
   def take_action(self, x):
+    x = torch.tensor(x, dtype=torch.float32, device=device)
     x = x.unsqueeze(0)  # Add batch dimension if not present
     policy_logits, _ = self.forward(x)
     return policy_logits.argmax().item()

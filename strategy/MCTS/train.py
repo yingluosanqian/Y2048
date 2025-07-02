@@ -75,7 +75,7 @@ def get_dataloader_from_replaybuffer(replay_buffer, batch_size=128, shuffle=True
 def train_nn(
   network: PolicyValueNet,
   replay_buffer: ReplayBuffer,
-  epochs=20,
+  epochs=50,
   batch_size=128,
   lr=1e-3,
   weight_decay=1e-4,
@@ -126,14 +126,14 @@ def train_nn(
 ###############################################################################
 
 
-def _collect_trajectory_worker_by_round(args):
+def _collect_trajectory_worker_by_round(args: tuple[Strategy, PolicyValueNet, int]):
   strategy, network, round = args
   scores = [strategy.collect_trajectory(
-    None, network=network, gui=False) for _ in range(round)]
+    None, network=network, gui=False, collect=False) for _ in range(round)]
   return scores
 
 
-def collect_eval_data(network, replay_buffer: ReplayBuffer, num_workers=10, game_round=20):
+def collect_eval_data(network, num_workers=10, game_round=20):
   with multiprocessing.get_context("spawn").Pool(num_workers) as pool:
     # Each worker gets its own Strategy and collects samples
     sub_game_round = (game_round + num_workers - 1) // num_workers
@@ -160,7 +160,6 @@ def main():
     boarder_size, boarder_size, num_res_blocks=2).to(device)  # neural network
   train_network = PolicyValueNet(
     boarder_size, boarder_size, num_res_blocks=2).to(device)  # neural network
-  # best_avg_score = eval_models(network, None)
   best_avg_score = 0.0  # Initialize best average score
   logging.info(f"Initial average score: {best_avg_score:.2f}")
 
@@ -169,6 +168,9 @@ def main():
     logging.info("Loading existing network weights...")
     torch.load('strategy/MCTS/models/network_latest.pth',
                infer_network.state_dict(), weights_only=True)
+    best_avg_score = collect_eval_data(infer_network)
+    logging.info(
+      f"Loaded existing network weights with average score: {best_avg_score:.2f}")
   else:
     logging.info("No existing network weights found, starting from scratch.")
 
@@ -179,6 +181,7 @@ def main():
     start_time = time.time()
     collect_train_data(network=infer_network,
                        replay_buffer=replay_buffer, num_workers=20)
+    replay_buffer.save(f"strategy/MCTS/datas/data_{i+1}.txt")
     end_time = time.time()
     logging.info(
       f"Data collection completed in {end_time - start_time:.2f} seconds.")
@@ -187,7 +190,7 @@ def main():
     train_nn(
       network=train_network,
       replay_buffer=replay_buffer,
-      epochs=20,
+      epochs=50,
       batch_size=128,
       lr=1e-3,
       weight_decay=1e-4
@@ -195,7 +198,7 @@ def main():
 
     if (i + 1) % 5 == 0:
       logging.info(f"Evaluating model after {i+1} iterations...")
-      avg_score = collect_eval_data(train_network, None)
+      avg_score = collect_eval_data(train_network)
       logging.info(f"Average score after {i+1} iterations: {avg_score:.2f}")
       if avg_score > best_avg_score * 1.05:  # 5% improvement threshold
         # Save the model if it improves by 5% or more
