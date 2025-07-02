@@ -135,16 +135,15 @@ def _collect_trajectory_worker_by_round(args: tuple[Strategy, PolicyValueNet, in
 
 
 def collect_eval_data(network, num_workers=10, game_round=20):
+  logging.info("Collecting evaluation data...")
+  network = network.to(device_cpu)  # Ensure network is on CPU for evaluation
   with multiprocessing.get_context("spawn").Pool(num_workers) as pool:
     # Each worker gets its own Strategy and collects samples
     sub_game_round = (game_round + num_workers - 1) // num_workers
     logging.info(f"sub_game_round: {sub_game_round}")
     args = []
     for _ in range(num_workers):
-      sub_network = PolicyValueNet(boarder_size, boarder_size, num_res_blocks=2)
-      sub_network.load_state_dict(network.state_dict())
-      sub_network = sub_network.to(device_cpu)
-      args.append((Strategy(), sub_network, sub_game_round))
+      args.append((Strategy(), network, sub_game_round))
     results = pool.map(_collect_trajectory_worker_by_round, args)
     # Flatten and add to replay_buffer
 
@@ -165,12 +164,12 @@ def main():
   best_avg_score = 0.0  # Initialize best average score
   logging.info(f"Initial average score: {best_avg_score:.2f}")
 
-  network_path = Path('strategy/MCTS/models/network_latest.pth')
+  network_path = Path('strategy/MCTS/models/network_latest_size{boarder_size}.pth')
   if network_path.exists():
     logging.info("Loading existing network weights...")
-    torch.load('strategy/MCTS/models/network_latest.pth',
+    torch.load('strategy/MCTS/models/network_latest_size{boarder_size}.pth',
                infer_network.state_dict(), weights_only=True)
-    torch.load('strategy/MCTS/models/network_latest.pth',
+    torch.load('strategy/MCTS/models/network_latest_size{boarder_size}.pth',
                train_network.state_dict(), weights_only=True)
     best_avg_score = collect_eval_data(infer_network)
     logging.info(
@@ -194,13 +193,13 @@ def main():
     train_nn(
       network=train_network,
       replay_buffer=replay_buffer,
-      epochs=50,
+      epochs=30,
       batch_size=128,
       lr=1e-3,
       weight_decay=1e-4
     )
 
-    if (i + 1) % 5 == 0:
+    if (i + 1) % 3 == 0:
       logging.info(f"Evaluating model after {i+1} iterations...")
       avg_score = collect_eval_data(train_network)
       logging.info(f"Average score after {i+1} iterations: {avg_score:.2f}")
@@ -210,7 +209,7 @@ def main():
           f"Improvement detected! Saving model with score: {avg_score:.2f}. (Old: {best_avg_score:.2f})")
         best_avg_score = avg_score
         torch.save(train_network.state_dict(),
-                   'strategy/MCTS/models/network_latest.pth')
+                   'strategy/MCTS/models/network_latest_size{boarder_size}.pth')
         infer_network.load_state_dict(train_network.state_dict())
       else:
         logging.info(

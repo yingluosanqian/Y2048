@@ -34,26 +34,40 @@ def train_by_history():
   )
   
   torch.save(train_network.state_dict(),
-              'strategy/MCTS/models/network_latest.pth')
+              'strategy/MCTS/models/network_history.pth')
 
-  avg_scores = collect_eval_data(train_network)
+def eval_model():
+  infer_network = PolicyValueNet(
+    boarder_size, boarder_size, num_res_blocks=2).to(device)
+  state_dict = torch.load('strategy/MCTS/models/network_history.pth',
+              map_location=device,
+              weights_only=True)
+  infer_network.load_state_dict(state_dict)
+  avg_scores = collect_eval_data(infer_network)
   print(f"Average scores after training: {avg_scores:.2f}")
 
 
 def model_test_by_case():
   chess_board = [
     [64, 128, 2],
-    [32, 16, 2],
-    [16, 4, 4],
+    [32, 8, 4],
+    [2, 16, 4],
   ]
   state = transform_state(chess_board)
+  state = torch.tensor(state, dtype=torch.float32, device=device)
+  state = state.unsqueeze(0)  # Add batch dimension if not present
+  
   
   infer_network = PolicyValueNet(
     boarder_size, boarder_size, num_res_blocks=2).to(device)
-  torch.load('strategy/MCTS/models/network_latest.pth',
-              infer_network.state_dict(), weights_only=True)
+  state_dict = torch.load('strategy/MCTS/models/network_history.pth',
+              map_location=device,
+              weights_only=True)
+  infer_network.load_state_dict(state_dict)
+  infer_network.eval()  # Set to evaluation mode
   
-  policy, value = infer_network.take_action(state)
+  policy, _ = infer_network(state)
+  policy = policy.detach().squeeze(0)
   policy_view = {}
   for i in range(4):
     policy_view[ACTION[i]] = float(np.round(policy[i], 2))
@@ -61,7 +75,9 @@ def model_test_by_case():
 
 
 def main():
-  train_by_history()
+  # train_by_history()
+  # eval_model()
+  model_test_by_case()
 
 
 if __name__ == "__main__":

@@ -166,7 +166,7 @@ class MCT:
     done = env._is_game_over()
     score = 0
     move_count = 0
-    while not done and move_count < 16:
+    while not done and move_count < 32:
       actions = [network.take_action(state, device=device)] if network else []
       actions += list(np.random.permutation(range(4)))
       for i in actions:
@@ -238,7 +238,7 @@ class MCT:
 
 
 class ReplayBuffer(Dataset):
-  def __init__(self, max_size=1024):
+  def __init__(self, max_size=4096):
     self.max_size = max_size
     self.human_states = collections.deque()
     self.states = collections.deque()
@@ -335,6 +335,7 @@ class Strategy:
     Collect a trajectory of actions and rewards from the environment.
     Returns ...
     """
+    network.eval()
     env = Env2048()  # environment
 
     if gui:

@@ -3,10 +3,11 @@ import random
 
 from types import SimpleNamespace
 from gym import spaces
+from const import const_boarder_size as boarder_size
 
 
 class Env2048:
-  def __init__(self, size=3, seed=None):
+  def __init__(self, size=boarder_size, seed=None):
     self.size = size
     if seed is not None:
       self.rng = random.Random(seed)
