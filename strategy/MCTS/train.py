@@ -12,6 +12,7 @@ from strategy.MCTS.mcts import Strategy, ReplayBuffer
 from torch.utils.data import Dataset, DataLoader
 
 import logging
+import multiprocessing
 
 logging.basicConfig(
   filename='logs/main.log',
@@ -33,6 +34,31 @@ class ReplayBufferDataset(Dataset):
   def __getitem__(self, idx):
     sample = self.buffer[idx]
     return np.array(sample['states'], dtype=np.float64), np.array(sample['actions'], dtype=np.float64), np.array(sample['rewards'], dtype=np.float64)
+
+###############################################################################
+# Collecting training data from multiple workers
+###############################################################################
+
+
+def _collect_trajectory_worker(args):
+  strategy, network, buffer_size = args
+  local_buffer = ReplayBuffer(max_size=buffer_size)
+  while len(local_buffer) < buffer_size:
+    strategy.collect_trajectory(local_buffer, network=network, gui=False)
+  return local_buffer
+
+
+def collect_train_data(network, replay_buffer: ReplayBuffer, num_workers=10):
+  with multiprocessing.get_context("spawn").Pool(num_workers) as pool:
+    # Each worker gets its own Strategy and collects samples
+    sub_buffer_size = replay_buffer.max_size // num_workers
+    args = [(Strategy(), network, sub_buffer_size) for _ in range(num_workers)]
+    results = pool.map(_collect_trajectory_worker, args)
+    # Flatten and add to replay_buffer
+
+    for worker_samples in results:
+      for sample in worker_samples:
+        replay_buffer.extend(sample)
 
 
 def get_dataloader_from_replaybuffer(replay_buffer, batch_size=128, shuffle=True):
@@ -94,7 +120,7 @@ def eval_models(network: PolicyValueNet, replay_buffer: ReplayBuffer):
   scores = []
   for i in tqdm(range(20), desc="Evaluating models"):
     score = strategy.collect_trajectory(
-      replay_buffer, network=None, gui=False, collect=False)
+      replay_buffer, network=network, gui=False, collect=False)
     scores.append(score)
   avg_score = np.mean(scores)
   return avg_score
@@ -105,7 +131,8 @@ def main():
   logging.info("Starting training process...")
   logging.info("====================================================")
   network = PolicyValueNet(3, 3, num_res_blocks=2).to(device)  # neural network
-  best_avg_score = eval_models(network, None)
+  # best_avg_score = eval_models(network, None)
+  best_avg_score = 0.0  # Initialize best average score
   logging.info(f"Initial average score: {best_avg_score:.2f}")
 
   network_path = Path('strategy/MCTS/models/network_latest.pth')
@@ -116,19 +143,13 @@ def main():
   else:
     logging.info("No existing network weights found, starting from scratch.")
 
-  strategy = Strategy()
-
   for i in range(100):
     replay_buffer = ReplayBuffer()
-    with tqdm(total=replay_buffer.max_size, desc="Collecting human data") as pbar:
-      last_len = len(replay_buffer)
-      while len(replay_buffer) < replay_buffer.max_size:
-        # Collect human data
-        strategy.collect_trajectory(replay_buffer, network=network, gui=False)
-        cur_len = len(replay_buffer)
-        pbar.update(cur_len - last_len)
-        last_len = cur_len
 
+    logging.info(f"Collecting training data, iteration {i+1}...")
+    collect_train_data(network=network, replay_buffer=replay_buffer)
+
+    logging.info(f"Training neural network, iteration {i+1}...")
     train_nn(
       network=network,
       replay_buffer=replay_buffer,
@@ -144,7 +165,8 @@ def main():
       logging.info(f"Average score after {i+1} iterations: {avg_score:.2f}")
       if avg_score > best_avg_score * 1.05:  # 5% improvement threshold
         # Save the model if it improves by 5% or more
-        logging.info(f"Improvement detected! Saving model with score: {avg_score:.2f}. (Old: {best_avg_score:.2f})")
+        logging.info(
+          f"Improvement detected! Saving model with score: {avg_score:.2f}. (Old: {best_avg_score:.2f})")
         best_avg_score = avg_score
         torch.save(network.state_dict(),
                    'strategy/MCTS/models/network_latest.pth')

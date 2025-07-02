@@ -241,8 +241,8 @@ def take_action(env, *, network=None, select_times=10):
 
 
 class ReplayBuffer(Dataset):
-  def __init__(self):
-    self.max_size = 4096
+  def __init__(self, max_size=4096):
+    self.max_size = max_size
     self.human_states = collections.deque()
     self.states = collections.deque()
     self.policy_targets = collections.deque()
@@ -253,6 +253,24 @@ class ReplayBuffer(Dataset):
     self.states.append(transform_state(state))
     self.policy_targets.append(policy_target)
     self.value_targets.append(value_target)
+
+  def extend(self, other):
+    """
+    Extend the replay buffer with another ReplayBuffer instance.
+    """
+    if not isinstance(other, ReplayBuffer):
+      raise TypeError("Can only extend with another ReplayBuffer instance.")
+    self.human_states.extend(other.human_states)
+    self.states.extend(other.states)
+    self.policy_targets.extend(other.policy_targets)
+    self.value_targets.extend(other.value_targets)
+
+    # Ensure the size does not exceed max_size
+    while len(self.states) > self.max_size:
+      self.human_states.popleft()
+      self.states.popleft()
+      self.policy_targets.popleft()
+      self.value_targets.popleft()
 
   def __len__(self):
     return len(self.states)
