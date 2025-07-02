@@ -6,3 +6,4 @@ const_device_gpu = torch.device("cuda")
 const_boarder_size = 3
 
 const_action = ["Left", "Right", "Up", "Down"]
+const_fix_action_order = [1, 3, 0, 2]

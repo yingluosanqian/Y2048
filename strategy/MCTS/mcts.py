@@ -16,6 +16,7 @@ from strategy.MCTS.network import PolicyValueNet
 from const import const_device as device
 from const import const_boarder_size as boarder_size
 from const import const_action as ACTION
+from const import const_fix_action_order as fix_action_order
 
 UCT_CONSTANT = 1.1111
 
@@ -135,10 +136,12 @@ class MCT:
   # Part II: Expansion
   ###############################################################################
 
-  def expand_tree(self, cur: Tree):
+  def expand_tree(self, cur: Tree, network: PolicyValueNet | None = None, device=device):
     if cur.role == Role.PLAYER:
-      # TODO: Replace this strategy
-      shuffled_index = np.random.permutation(range(4))
+      # TODO: Replace a better strategy?
+      state = transform_state(cur.env.observation_space.matrix)
+      shuffled_index = ([network.take_action(state, device=device)] if network else [
+      ]) + list(np.random.permutation(range(4)))
       for i in shuffled_index:
         if cur.childs[i] is None:
           env = copy.deepcopy(cur.env)
@@ -166,9 +169,20 @@ class MCT:
     done = env._is_game_over()
     score = 0
     move_count = 0
-    while not done and move_count < 32:
+    while not done and move_count < 16:
       actions = [network.take_action(state, device=device)] if network else []
-      actions += list(np.random.permutation(range(4)))
+      actions += fix_action_order
+      for i in actions:
+        next_state, reward, done, info = env.step(i)
+        state = transform_state(next_state)
+        if info.moved is False:
+          continue
+        score += reward
+        break
+      move_count += 1
+
+    while not done:
+      actions = fix_action_order
       for i in actions:
         next_state, reward, done, info = env.step(i)
         state = transform_state(next_state)
@@ -217,13 +231,15 @@ class MCT:
       # Step 2: Expand the tree
       expanded_tree = None
       for selected_tree in ordered_selectable_childs:
-        expanded_tree = self.expand_tree(selected_tree)
+        expanded_tree = self.expand_tree(
+          selected_tree, network=network, device=device)
         if expanded_tree is not None:
           break
       if expanded_tree is None:
         break
       # Step 3: Simulate the game from the expanded tree
-      score, moves = self.simulate(expanded_tree, network=network, device=device)
+      score, moves = self.simulate(
+        expanded_tree, network=network, device=device)
       total_moves += moves
       # Step 4: Backpropagate the score to the root node
       self.backpropagation(expanded_tree, score)
@@ -317,6 +333,7 @@ class ReplayBuffer(Dataset):
       self.policy_targets = data['policy_targets']
       self.value_targets = data['value_targets']
 
+
 class Strategy:
   def __init__(self):
     pass
@@ -327,7 +344,7 @@ class Strategy:
       env), role=Role.PLAYER, score_gain=0.0)
     policy, value, moves = mct.mct_search(
       tree, network=network, select_times=select_times, device=device)
-    
+
     return policy, value, np.argmax(policy), moves
 
   def collect_trajectory(self, replay_buffer: ReplayBuffer, *, network=None, gui=False, collect=True, device=device):
@@ -347,7 +364,8 @@ class Strategy:
     scores = 0
     total_moves = 0
     while not done:
-      policy, value, action, moves = self.take_action(env, network=network, device=device)
+      policy, value, action, moves = self.take_action(
+        env, network=network, device=device)
       total_moves += moves
       if action == -1:  # No valid move
         break
@@ -366,6 +384,7 @@ class Strategy:
         break
     return scores
 
+
 def main():
   # eval()
   # score, move = play()
@@ -373,7 +392,8 @@ def main():
 
   replay_buffer = ReplayBuffer()
 
-  network = PolicyValueNet(boarder_size, boarder_size, num_res_blocks=2).to(device)  # neural network
+  network = PolicyValueNet(boarder_size, boarder_size,
+                           num_res_blocks=2).to(device)  # neural network
   # network = None
   strategy = Strategy()
   score = strategy.collect_trajectory(replay_buffer, network=network, gui=True)
