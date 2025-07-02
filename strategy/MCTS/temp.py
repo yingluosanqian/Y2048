@@ -8,6 +8,8 @@ from strategy.MCTS.train import train_nn
 from strategy.MCTS.train import collect_eval_data
 from strategy.MCTS.mcts import transform_state
 from const import const_action as ACTION
+from strategy.MCTS.mcts import Strategy
+from const import const_device_cpu as device_cpu
 
 import torch
 import numpy as np
@@ -32,16 +34,31 @@ def train_by_history():
     lr=1e-3,
     weight_decay=1e-4
   )
-  
+
   torch.save(train_network.state_dict(),
-              'strategy/MCTS/models/network_history.pth')
+             'strategy/MCTS/models/network_history.pth')
+
+
+def eval_model_once():
+  infer_network = PolicyValueNet(
+    boarder_size, boarder_size, num_res_blocks=2).to(device)
+  state_dict = torch.load('strategy/MCTS/models/network_history.pth',
+                          map_location=device,
+                          weights_only=True)
+  infer_network.load_state_dict(state_dict)
+  
+  strategy = Strategy()
+  scores = strategy.collect_trajectory(
+    None, network=infer_network, gui=True, collect=False, device=device_cpu)
+  print(f"Scores after training: {scores:.2f}")
+
 
 def eval_model():
   infer_network = PolicyValueNet(
     boarder_size, boarder_size, num_res_blocks=2).to(device)
   state_dict = torch.load('strategy/MCTS/models/network_history.pth',
-              map_location=device,
-              weights_only=True)
+                          map_location=device,
+                          weights_only=True)
   infer_network.load_state_dict(state_dict)
   avg_scores = collect_eval_data(infer_network)
   print(f"Average scores after training: {avg_scores:.2f}")
@@ -56,28 +73,28 @@ def model_test_by_case():
   state = transform_state(chess_board)
   state = torch.tensor(state, dtype=torch.float32, device=device)
   state = state.unsqueeze(0)  # Add batch dimension if not present
-  
-  
+
   infer_network = PolicyValueNet(
     boarder_size, boarder_size, num_res_blocks=2).to(device)
   state_dict = torch.load('strategy/MCTS/models/network_history.pth',
-              map_location=device,
-              weights_only=True)
+                          map_location=device,
+                          weights_only=True)
   infer_network.load_state_dict(state_dict)
   infer_network.eval()  # Set to evaluation mode
-  
+
   policy, _ = infer_network(state)
   policy = policy.detach().squeeze(0)
   policy_view = {}
   for i in range(4):
     policy_view[ACTION[i]] = float(np.round(policy[i], 2))
-  print(f"Poliocy: {policy_view}")
+  print(f"Policy: {policy_view}")
 
 
 def main():
   # train_by_history()
   # eval_model()
-  model_test_by_case()
+  eval_model_once()
+  # model_test_by_case()
 
 
 if __name__ == "__main__":
