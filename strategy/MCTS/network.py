@@ -104,7 +104,7 @@ if __name__ == "__main__":
   import time
   start_time = time.time()
   net.eval()  # Set to evaluation mode
-  for _ in range(1):
+  for _ in range(10):
     _ = net.take_action(dummy_input)
   end_time = time.time()
   print(f"Forward pass time: {end_time - start_time:.6f} seconds")

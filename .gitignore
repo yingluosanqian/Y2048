@@ -1,0 +1,7 @@
+*.log
+*.txt
+*model
+*.pyc
+*.png
+*.pth
+*.json
