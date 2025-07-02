@@ -13,7 +13,7 @@ from game.env_2048 import Env2048
 from game.game_2048_ui import Game2048UI
 from strategy.MCTS.network import PolicyValueNet
 
-device = "cuda" if torch.cuda.is_available() else "cpu"
+from const import const_device as device
 
 ACTION = ["Left", "Right", "Up", "Down"]
 UCT_CONSTANT = 1.1111
@@ -38,7 +38,7 @@ def transform_state(obs: list[list[int]]) -> np.array:
   n = len(obs)
   m = len(obs[0])
   max_exp = 17
-  one_hot = np.zeros((max_exp + 1, n, m), dtype=np.float64)
+  one_hot = np.zeros((max_exp + 1, n, m), dtype=np.float32)
   for i in range(n):
     for j in range(m):
       val = obs[i][j]
@@ -115,12 +115,12 @@ class MCT:
                math.sqrt(math.log(N) / tree.n), reverse=True)
     return trees
 
-  def collect_selectable_childs(self, root: Tree):
+  def collect_selectable_childs(self, root: Tree | None):
     """
     Collects all selectable child nodes from the root.
     Returns a list of child nodes that can be selected.
     """
-    if not root:
+    if root is None:
       return []
     if root.role == Role.GNERATOR:
       return self.collect_selectable_childs(root.childs[0])
@@ -165,7 +165,7 @@ class MCT:
     done = env._is_game_over()
     score = 0
     move_count = 0
-    while not done and move_count < 32:
+    while not done and move_count < 16:
       actions = [network.take_action(state)] if network else []
       actions += list(np.random.permutation(range(4)))
       for i in actions:
@@ -176,7 +176,7 @@ class MCT:
         score += reward
         break
       move_count += 1
-    return score
+    return score, move_count
 
   ###############################################################################
   # Part IV: Backpropagation
@@ -205,6 +205,7 @@ class MCT:
     network: PolicyValueNet | None = None,
     select_times,
   ):
+    total_moves = 0
     selectable_childs = []
     for iter in range(select_times):
       # Step 1: Select a child node
@@ -220,15 +221,17 @@ class MCT:
       if expanded_tree is None:
         break
       # Step 3: Simulate the game from the expanded tree
-      score = self.simulate(expanded_tree, network=network)
-      # Step 4: Backpropagate the score to the root
+      score, moves = self.simulate(expanded_tree, network=network)
+      total_moves += moves
+      # Step 4: Backpropagate the score to the root node
       self.backpropagation(expanded_tree, score)
 
+    print("Total moves in MCTS search:", total_moves)
     # Return policy and value
     policy = np.array(
       [child.perf if child is not None else 0.0 for child in root.childs])
     value = root.perf
-    return policy, value
+    return policy, value, total_moves
 
 
 class ReplayBuffer(Dataset):
@@ -294,9 +297,10 @@ class Strategy:
     mct = MCT()
     tree = Tree(parent=None, env=copy.deepcopy(
       env), role=Role.PLAYER, score_gain=0.0)
-    policy, value = mct.mct_search(
+    policy, value, moves = mct.mct_search(
       tree, network=network, select_times=select_times)
-    return policy, value, np.argmax(policy)
+    
+    return policy, value, np.argmax(policy), moves
 
   def collect_trajectory(self, replay_buffer: ReplayBuffer, *, network=None, gui=False, collect=True):
     """
@@ -312,8 +316,10 @@ class Strategy:
 
     done = False
     scores = 0
+    total_moves = 0
     while not done:
-      policy, value, action = self.take_action(env, network=network)
+      policy, value, action, moves = self.take_action(env, network=network)
+      total_moves += moves
       if action == -1:  # No valid move
         break
       origin_state = copy.deepcopy(env.observation_space.matrix)
@@ -329,6 +335,7 @@ class Strategy:
         time.sleep(0.05)
       if done:
         break
+    print("total_moves:", total_moves)
     return scores
 
 def main():
@@ -341,8 +348,8 @@ def main():
   # network = PolicyValueNet(3, 3, num_res_blocks=6).to(device)  # neural network
   network = None
   strategy = Strategy()
-  strategy.collect_trajectory(replay_buffer, network=network, gui=True)
-  replay_buffer.render()
+  strategy.collect_trajectory(replay_buffer, network=network, gui=False)
+  # replay_buffer.render()
 
 
 if __name__ == "__main__":

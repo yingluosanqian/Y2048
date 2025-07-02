@@ -2,15 +2,15 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+from const import const_device as device
 
 
 class ConvBlock(nn.Module):
   def __init__(self, in_channels=18, out_channels=256, kernel_size=3):
     super(ConvBlock, self).__init__()
     self.conv1 = nn.Conv2d(in_channels, out_channels,
-                           kernel_size=kernel_size, stride=1, padding=1, dtype=torch.float64)
-    self.bn = nn.BatchNorm2d(out_channels, dtype=torch.float64)
+                           kernel_size=kernel_size, stride=1, padding=1, dtype=torch.float32)
+    self.bn = nn.BatchNorm2d(out_channels, dtype=torch.float32)
 
   def forward(self, x):
     x = self.conv1(x)
@@ -23,11 +23,11 @@ class ResidualBlock(nn.Module):
   def __init__(self, num_channels=256):
     super(ResidualBlock, self).__init__()
     self.conv1 = nn.Conv2d(num_channels, num_channels,
-                           kernel_size=3, stride=1, padding=1, dtype=torch.float64)
-    self.bn1 = nn.BatchNorm2d(num_channels, dtype=torch.float64)
+                           kernel_size=3, stride=1, padding=1, dtype=torch.float32)
+    self.bn1 = nn.BatchNorm2d(num_channels, dtype=torch.float32)
     self.conv2 = nn.Conv2d(num_channels, num_channels,
-                           kernel_size=3, stride=1, padding=1, dtype=torch.float64)
-    self.bn2 = nn.BatchNorm2d(num_channels, dtype=torch.float64)
+                           kernel_size=3, stride=1, padding=1, dtype=torch.float32)
+    self.bn2 = nn.BatchNorm2d(num_channels, dtype=torch.float32)
 
   def forward(self, x):
     residual = x
@@ -47,15 +47,15 @@ class PolicyValueHeads(nn.Module):
     self.board_size = grid_n * grid_m
 
     # Policy Head
-    self.policy_conv = nn.Conv2d(256, 2, kernel_size=1, stride=1, dtype=torch.float64)
-    self.policy_bn = nn.BatchNorm2d(2, dtype=torch.float64)
-    self.policy_fc = nn.Linear(2 * self.board_size, 4, dtype=torch.float64)  # 4-direction
+    self.policy_conv = nn.Conv2d(256, 2, kernel_size=1, stride=1, dtype=torch.float32)
+    self.policy_bn = nn.BatchNorm2d(2, dtype=torch.float32)
+    self.policy_fc = nn.Linear(2 * self.board_size, 4, dtype=torch.float32)  # 4-direction
 
     # Value Head
-    self.value_conv = nn.Conv2d(256, 1, kernel_size=1, stride=1, dtype=torch.float64)
-    self.value_bn = nn.BatchNorm2d(1, dtype=torch.float64)
-    self.value_fc1 = nn.Linear(self.board_size, 256, dtype=torch.float64)  # with flatten input
-    self.value_fc2 = nn.Linear(256, 1, dtype=torch.float64)
+    self.value_conv = nn.Conv2d(256, 1, kernel_size=1, stride=1, dtype=torch.float32)
+    self.value_bn = nn.BatchNorm2d(1, dtype=torch.float32)
+    self.value_fc1 = nn.Linear(self.board_size, 256, dtype=torch.float32)  # with flatten input
+    self.value_fc2 = nn.Linear(256, 1, dtype=torch.float32)
 
   def forward(self, x):
     # Shape of x: [batch, 256, grid_n, grid_m]
@@ -90,7 +90,6 @@ class PolicyValueNet(nn.Module):
     return self.policy_value_heads(x)
 
   def take_action(self, x):
-    x = torch.tensor(x, dtype=torch.float64).to(device)  # Ensure input is a tensor
     x = x.unsqueeze(0)  # Add batch dimension if not present
     policy_logits, _ = self.forward(x)
     return policy_logits.argmax().item()
@@ -98,11 +97,18 @@ class PolicyValueNet(nn.Module):
 
 # Test
 if __name__ == "__main__":
-  grid_n, grid_m = 4, 4  # 4x4 grid for 2048
-  net = PolicyValueNet(grid_n, grid_m)
-  dummy_input = torch.randn(1, 18, grid_n, grid_m)  # mock
-  policy, value = net(dummy_input)
+  grid_n, grid_m = 3, 3  # 4x4 grid for 2048
+  net = PolicyValueNet(grid_n, grid_m, num_res_blocks=2).to(device)
+  dummy_input = torch.randn(18, grid_n, grid_m, dtype=torch.float32, device=device)  # mock
+  
+  import time
+  start_time = time.time()
+  net.eval()  # Set to evaluation mode
+  for _ in range(1):
+    _ = net.take_action(dummy_input)
+  end_time = time.time()
+  print(f"Forward pass time: {end_time - start_time:.6f} seconds")
 
-  print(f"Shape of policy-head: {policy.shape}")  # Should be [1, 4]
-  # Should be in [-1, 1]
-  print(f"Shape of value-head: [{value.min():.3f}, {value.max():.3f}]")
+  # print(f"Shape of policy-head: {policy.shape}")  # Should be [1, 4]
+  # # Should be in [-1, 1]
+  # print(f"Shape of value-head: [{value.min():.3f}, {value.max():.3f}]")

@@ -4,6 +4,7 @@ import torch.nn.functional as F
 import torch.optim as optim
 import numpy as np
 import copy
+import time
 from pathlib import Path
 
 from tqdm import tqdm
@@ -22,7 +23,7 @@ logging.basicConfig(
   datefmt='%Y-%m-%d %H:%M:%S',
 )
 
-device = "cuda" if torch.cuda.is_available() else "cpu"
+from const import const_device as device
 
 
 class ReplayBufferDataset(Dataset):
@@ -34,7 +35,7 @@ class ReplayBufferDataset(Dataset):
 
   def __getitem__(self, idx):
     sample = self.buffer[idx]
-    return np.array(sample['states'], dtype=np.float64), np.array(sample['actions'], dtype=np.float64), np.array(sample['rewards'], dtype=np.float64)
+    return np.array(sample['states'], dtype=np.float32), np.array(sample['actions'], dtype=np.float32), np.array(sample['rewards'], dtype=np.float32)
 
 ###############################################################################
 # Collecting training data from multiple workers
@@ -52,12 +53,13 @@ def _collect_trajectory_worker(args):
 def collect_train_data(network, replay_buffer: ReplayBuffer, num_workers=10):
   with multiprocessing.get_context("spawn").Pool(num_workers) as pool:
     # Each worker gets its own Strategy and collects samples
-    sub_buffer_size = replay_buffer.max_size // num_workers
+    sub_buffer_size = (replay_buffer.max_size + num_workers - 1) // num_workers
+    logging.info(f"sub_buffer_size: {sub_buffer_size}")
     args = []
     for _ in range(num_workers):
       sub_network = PolicyValueNet(3, 3, num_res_blocks=2).to(device)
       sub_network.load_state_dict(network.state_dict())
-      args.append((Strategy(), sub_network, sub_buffer_size))
+      args.append((Strategy(), None, sub_buffer_size))
     results = pool.map(_collect_trajectory_worker, args)
     # Flatten and add to replay_buffer
 
@@ -151,17 +153,20 @@ def main():
     replay_buffer = ReplayBuffer()
 
     logging.info(f"Collecting training data, iteration {i+1}...")
-    collect_train_data(network=network, replay_buffer=replay_buffer)
+    start_time = time.time()
+    collect_train_data(network=network, replay_buffer=replay_buffer, num_workers=20)
+    end_time = time.time()
+    logging.info(f"Data collection completed in {end_time - start_time:.2f} seconds.")
 
-    logging.info(f"Training neural network, iteration {i+1}...")
-    train_nn(
-      network=network,
-      replay_buffer=replay_buffer,
-      epochs=5,
-      batch_size=128,
-      lr=1e-3,
-      weight_decay=1e-4
-    )
+    # logging.info(f"Training neural network, iteration {i+1}...")
+    # train_nn(
+    #   network=network,
+    #   replay_buffer=replay_buffer,
+    #   epochs=5,
+    #   batch_size=128,
+    #   lr=1e-3,
+    #   weight_decay=1e-4
+    # )
 
     if (i + 1) % 10 == 0:
       logging.info(f"Evaluating model after {i+1} iterations...")
