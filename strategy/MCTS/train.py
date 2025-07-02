@@ -3,6 +3,7 @@ import torch
 import torch.nn.functional as F
 import torch.optim as optim
 import numpy as np
+import copy
 from pathlib import Path
 
 from tqdm import tqdm
@@ -52,13 +53,12 @@ def collect_train_data(network, replay_buffer: ReplayBuffer, num_workers=10):
   with multiprocessing.get_context("spawn").Pool(num_workers) as pool:
     # Each worker gets its own Strategy and collects samples
     sub_buffer_size = replay_buffer.max_size // num_workers
-    args = [(Strategy(), network, sub_buffer_size) for _ in range(num_workers)]
+    args = [(Strategy(), copy.deepcopy(network), sub_buffer_size) for _ in range(num_workers)]
     results = pool.map(_collect_trajectory_worker, args)
     # Flatten and add to replay_buffer
 
     for worker_samples in results:
-      for sample in worker_samples:
-        replay_buffer.extend(sample)
+      replay_buffer.extend(worker_samples)
 
 
 def get_dataloader_from_replaybuffer(replay_buffer, batch_size=128, shuffle=True):

@@ -241,7 +241,7 @@ def take_action(env, *, network=None, select_times=10):
 
 
 class ReplayBuffer(Dataset):
-  def __init__(self, max_size=4096):
+  def __init__(self, max_size=1024):
     self.max_size = max_size
     self.human_states = collections.deque()
     self.states = collections.deque()
