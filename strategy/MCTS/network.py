@@ -89,7 +89,7 @@ class PolicyValueNet(nn.Module):
     x = self.res_tower(x)  # [B, 256, grid_n, grid_m]
     return self.policy_value_heads(x)
 
-  def take_action(self, x):
+  def take_action(self, x, device=device):
     x = torch.tensor(x, dtype=torch.float32, device=device)
     x = x.unsqueeze(0)  # Add batch dimension if not present
     policy_logits, _ = self.forward(x)

@@ -15,8 +15,8 @@ from strategy.MCTS.network import PolicyValueNet
 
 from const import const_device as device
 from const import const_boarder_size as boarder_size
+from const import const_action as ACTION
 
-ACTION = ["Left", "Right", "Up", "Down"]
 UCT_CONSTANT = 1.1111
 
 
@@ -160,14 +160,14 @@ class MCT:
   # Part III: Simulation
   ###############################################################################
 
-  def simulate(self, cur: Tree, network: PolicyValueNet | None = None):
+  def simulate(self, cur: Tree, network: PolicyValueNet | None = None, device=device):
     env = copy.deepcopy(cur.env)
     state = transform_state(env.observation_space.matrix)
     done = env._is_game_over()
     score = 0
     move_count = 0
     while not done and move_count < 16:
-      actions = [network.take_action(state)] if network else []
+      actions = [network.take_action(state, device=device)] if network else []
       actions += list(np.random.permutation(range(4)))
       for i in actions:
         next_state, reward, done, info = env.step(i)
@@ -205,6 +205,7 @@ class MCT:
     *,
     network: PolicyValueNet | None = None,
     select_times,
+    device=device,
   ):
     total_moves = 0
     selectable_childs = []
@@ -222,7 +223,7 @@ class MCT:
       if expanded_tree is None:
         break
       # Step 3: Simulate the game from the expanded tree
-      score, moves = self.simulate(expanded_tree, network=network)
+      score, moves = self.simulate(expanded_tree, network=network, device=device)
       total_moves += moves
       # Step 4: Backpropagate the score to the root node
       self.backpropagation(expanded_tree, score)
@@ -281,14 +282,17 @@ class ReplayBuffer(Dataset):
     Render the replay buffer contents.
     This is a placeholder function and can be implemented as needed.
     """
-    with open("logs/replay_buffer.txt", "w") as f:
+    with open("logs/replay_buffer.log", "w") as f:
       f.write("Replay Buffer Contents:\n")
       for i, (state, policy_target, value_target) in enumerate(zip(self.human_states, self.policy_targets, self.value_targets)):
         f.write(f"The {i}-item:\n")
         for row in state:
           f.write(" ".join(f"{num:>{5}}" for num in row) + "\n")
+        policy_view = {}
+        for i in range(4):
+          policy_view[ACTION[i]] = float(np.round(policy_target[i], 2))
         f.write(
-          f"Policy_target: {np.round(policy_target, 2)}, Value_target: {value_target}\n\n")
+          f"Policy_target: {policy_view}, Value_target: {value_target}\n\n")
 
   def save(self, filename):
     """
@@ -307,7 +311,7 @@ class ReplayBuffer(Dataset):
     Load the replay buffer from a file.
     """
     with open(filename, "rb") as f:
-      data = torch.load(f)
+      data = torch.load(f, weights_only=False)
       self.human_states = data['human_states']
       self.states = data['states']
       self.policy_targets = data['policy_targets']
@@ -317,16 +321,16 @@ class Strategy:
   def __init__(self):
     pass
 
-  def take_action(self, env, *, network=None, select_times=10):
+  def take_action(self, env, *, network=None, select_times=10, device=device):
     mct = MCT()
     tree = Tree(parent=None, env=copy.deepcopy(
       env), role=Role.PLAYER, score_gain=0.0)
     policy, value, moves = mct.mct_search(
-      tree, network=network, select_times=select_times)
+      tree, network=network, select_times=select_times, device=device)
     
     return policy, value, np.argmax(policy), moves
 
-  def collect_trajectory(self, replay_buffer: ReplayBuffer, *, network=None, gui=False, collect=True):
+  def collect_trajectory(self, replay_buffer: ReplayBuffer, *, network=None, gui=False, collect=True, device=device):
     """
     Collect a trajectory of actions and rewards from the environment.
     Returns ...
@@ -342,7 +346,7 @@ class Strategy:
     scores = 0
     total_moves = 0
     while not done:
-      policy, value, action, moves = self.take_action(env, network=network)
+      policy, value, action, moves = self.take_action(env, network=network, device=device)
       total_moves += moves
       if action == -1:  # No valid move
         break

@@ -1,6 +1,5 @@
 *.log
-*model
+*.model
 *.pyc
 *.png
-*.pth
 *.json

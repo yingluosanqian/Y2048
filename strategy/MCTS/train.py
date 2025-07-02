@@ -1,5 +1,6 @@
 
 from const import const_device as device
+from const import const_device_cpu as device_cpu
 from const import const_boarder_size as boarder_size
 import torch
 import torch.nn.functional as F
@@ -129,7 +130,7 @@ def train_nn(
 def _collect_trajectory_worker_by_round(args: tuple[Strategy, PolicyValueNet, int]):
   strategy, network, round = args
   scores = [strategy.collect_trajectory(
-    None, network=network, gui=False, collect=False) for _ in range(round)]
+    None, network=network, gui=False, collect=False, device=device_cpu) for _ in range(round)]
   return scores
 
 
@@ -140,9 +141,10 @@ def collect_eval_data(network, num_workers=10, game_round=20):
     logging.info(f"sub_game_round: {sub_game_round}")
     args = []
     for _ in range(num_workers):
-      sub_network = PolicyValueNet(boarder_size, boarder_size, num_res_blocks=2).to(device)
+      sub_network = PolicyValueNet(boarder_size, boarder_size, num_res_blocks=2)
       sub_network.load_state_dict(network.state_dict())
-      args.append((Strategy(), network, sub_game_round))
+      sub_network = sub_network.to(device_cpu)
+      args.append((Strategy(), sub_network, sub_game_round))
     results = pool.map(_collect_trajectory_worker_by_round, args)
     # Flatten and add to replay_buffer
 
@@ -168,6 +170,8 @@ def main():
     logging.info("Loading existing network weights...")
     torch.load('strategy/MCTS/models/network_latest.pth',
                infer_network.state_dict(), weights_only=True)
+    torch.load('strategy/MCTS/models/network_latest.pth',
+               train_network.state_dict(), weights_only=True)
     best_avg_score = collect_eval_data(infer_network)
     logging.info(
       f"Loaded existing network weights with average score: {best_avg_score:.2f}")

@@ -1,0 +1,68 @@
+
+
+from strategy.MCTS.mcts import ReplayBuffer
+from strategy.MCTS.network import PolicyValueNet
+from const import const_device as device
+from const import const_boarder_size as boarder_size
+from strategy.MCTS.train import train_nn
+from strategy.MCTS.train import collect_eval_data
+from strategy.MCTS.mcts import transform_state
+from const import const_action as ACTION
+
+import torch
+import numpy as np
+
+
+def train_by_history():
+  replay_buffer = ReplayBuffer(max_size=16384)
+  for i in range(1, 10 + 1):
+    sub_replay_buffer = ReplayBuffer(max_size=1024)
+    sub_replay_buffer.load(f"strategy/MCTS/datas/data_{i}.txt")
+    replay_buffer.extend(sub_replay_buffer)
+  replay_buffer.render()
+  print(f"replay_buffer size: {len(replay_buffer)}")
+
+  train_network = PolicyValueNet(
+    boarder_size, boarder_size, num_res_blocks=2).to(device)  # neural network
+  train_nn(
+    network=train_network,
+    replay_buffer=replay_buffer,
+    batch_size=128,
+    epochs=50,
+    lr=1e-3,
+    weight_decay=1e-4
+  )
+  
+  torch.save(train_network.state_dict(),
+              'strategy/MCTS/models/network_latest.pth')
+
+  avg_scores = collect_eval_data(train_network)
+  print(f"Average scores after training: {avg_scores:.2f}")
+
+
+def model_test_by_case():
+  chess_board = [
+    [64, 128, 2],
+    [32, 16, 2],
+    [16, 4, 4],
+  ]
+  state = transform_state(chess_board)
+  
+  infer_network = PolicyValueNet(
+    boarder_size, boarder_size, num_res_blocks=2).to(device)
+  torch.load('strategy/MCTS/models/network_latest.pth',
+              infer_network.state_dict(), weights_only=True)
+  
+  policy, value = infer_network.take_action(state)
+  policy_view = {}
+  for i in range(4):
+    policy_view[ACTION[i]] = float(np.round(policy[i], 2))
+  print(f"Poliocy: {policy_view}")
+
+
+def main():
+  train_by_history()
+
+
+if __name__ == "__main__":
+  main()
