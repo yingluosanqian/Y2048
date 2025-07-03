@@ -1,8 +1,10 @@
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
 from const import const_device as device
+from const import const_num_of_res_tower as num_res_blocks
 
 
 class ConvBlock(nn.Module):
@@ -47,14 +49,18 @@ class PolicyValueHeads(nn.Module):
     self.board_size = grid_n * grid_m
 
     # Policy Head
-    self.policy_conv = nn.Conv2d(256, 2, kernel_size=1, stride=1, dtype=torch.float32)
+    self.policy_conv = nn.Conv2d(
+      256, 2, kernel_size=1, stride=1, dtype=torch.float32)
     self.policy_bn = nn.BatchNorm2d(2, dtype=torch.float32)
-    self.policy_fc = nn.Linear(2 * self.board_size, 4, dtype=torch.float32)  # 4-direction
+    self.policy_fc = nn.Linear(
+      2 * self.board_size, 4, dtype=torch.float32)  # 4-direction
 
     # Value Head
-    self.value_conv = nn.Conv2d(256, 1, kernel_size=1, stride=1, dtype=torch.float32)
+    self.value_conv = nn.Conv2d(
+      256, 1, kernel_size=1, stride=1, dtype=torch.float32)
     self.value_bn = nn.BatchNorm2d(1, dtype=torch.float32)
-    self.value_fc1 = nn.Linear(self.board_size, 256, dtype=torch.float32)  # with flatten input
+    self.value_fc1 = nn.Linear(
+      self.board_size, 256, dtype=torch.float32)  # with flatten input
     self.value_fc2 = nn.Linear(256, 1, dtype=torch.float32)
 
   def forward(self, x):
@@ -76,7 +82,7 @@ class PolicyValueHeads(nn.Module):
 
 
 class PolicyValueNet(nn.Module):
-  def __init__(self, grid_n, grid_m, num_res_blocks=19):
+  def __init__(self, grid_n, grid_m, num_res_blocks=num_res_blocks):
     super().__init__()
     self.conv_block = ConvBlock(in_channels=18)
     self.res_tower = nn.Sequential(
@@ -89,19 +95,31 @@ class PolicyValueNet(nn.Module):
     x = self.res_tower(x)  # [B, 256, grid_n, grid_m]
     return self.policy_value_heads(x)
 
-  def take_action(self, x, device=device):
-    x = torch.tensor(x, dtype=torch.float32, device=device)
-    x = x.unsqueeze(0)  # Add batch dimension if not present
-    policy_logits, _ = self.forward(x)
-    return policy_logits.argmax().item()
+
+def encode_state(obs: list[list[int]]) -> torch.tensor:
+  n = len(obs)
+  m = len(obs[0])
+  max_exp = 17
+  one_hot = np.zeros((max_exp + 1, n, m), dtype=np.float32)
+  for i in range(n):
+    for j in range(m):
+      val = obs[i][j]
+      if val == 0:
+        one_hot[max_exp, i, j] = 1.0
+      else:
+        n = int(np.log2(val))
+        if 1 <= n <= max_exp:
+          one_hot[n - 1, i, j] = 1.0
+  return torch.from_numpy(one_hot).unsqueeze(0)  # Add batch dimension
 
 
 # Test
 if __name__ == "__main__":
   grid_n, grid_m = 3, 3  # 4x4 grid for 2048
-  net = PolicyValueNet(grid_n, grid_m, num_res_blocks=2).to(device)
-  dummy_input = torch.randn(18, grid_n, grid_m, dtype=torch.float32, device=device)  # mock
-  
+  net = PolicyValueNet(grid_n, grid_m).to(device)
+  dummy_input = torch.randn(
+    18, grid_n, grid_m, dtype=torch.float32, device=device)  # mock
+
   import time
   start_time = time.time()
   net.eval()  # Set to evaluation mode

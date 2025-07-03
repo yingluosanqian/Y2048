@@ -25,7 +25,7 @@ def train_by_history():
   print(f"replay_buffer size: {len(replay_buffer)}")
 
   train_network = PolicyValueNet(
-    boarder_size, boarder_size, num_res_blocks=2).to(device)  # neural network
+    boarder_size, boarder_size).to(device)  # neural network
   train_nn(
     network=train_network,
     replay_buffer=replay_buffer,
@@ -41,7 +41,7 @@ def train_by_history():
 
 def eval_model_once():
   infer_network = PolicyValueNet(
-    boarder_size, boarder_size, num_res_blocks=2).to(device)
+    boarder_size, boarder_size).to(device)
   state_dict = torch.load(f'strategy/MCTS/models/network_history_size_{boarder_size}.pth',
                           map_location=device,
                           weights_only=True)
@@ -55,7 +55,7 @@ def eval_model_once():
 
 def eval_model():
   infer_network = PolicyValueNet(
-    boarder_size, boarder_size, num_res_blocks=2).to(device)
+    boarder_size, boarder_size).to(device)
   state_dict = torch.load(f'strategy/MCTS/models/network_history_size_{boarder_size}.pth',
                           map_location=device,
                           weights_only=True)
@@ -75,7 +75,7 @@ def model_test_by_case():
   state = state.unsqueeze(0)  # Add batch dimension if not present
 
   infer_network = PolicyValueNet(
-    boarder_size, boarder_size, num_res_blocks=2).to(device)
+    boarder_size, boarder_size).to(device)
   state_dict = torch.load(f'strategy/MCTS/models/network_history_{boarder_size}.pth',
                           map_location=device,
                           weights_only=True)

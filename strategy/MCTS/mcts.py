@@ -11,7 +11,7 @@ from torch.utils.data import Dataset
 
 from game.env_2048 import Env2048
 from game.game_2048_ui import Game2048UI
-from strategy.MCTS.network import PolicyValueNet
+from strategy.MCTS.network import PolicyValueNet, encode_state
 
 from const import const_device as device
 from const import const_boarder_size as boarder_size
@@ -35,175 +35,143 @@ def merge_lists(list1, list2):
   """
   return list(set(list1) | set(list2))
 
-
-def transform_state(obs: list[list[int]]) -> np.array:
-  n = len(obs)
-  m = len(obs[0])
-  max_exp = 17
-  one_hot = np.zeros((max_exp + 1, n, m), dtype=np.float32)
-  for i in range(n):
-    for j in range(m):
-      val = obs[i][j]
-      if val == 0:
-        one_hot[max_exp, i, j] = 1.0
-      else:
-        n = int(np.log2(val))
-        if 1 <= n <= max_exp:
-          one_hot[n - 1, i, j] = 1.0
-  return one_hot
-
 ###############################################################################
 # Tree Node
 ###############################################################################
 
 
 class Tree:
-  def __init__(self, *, parent, env: Env2048, role, score_gain):
-    self.role = role
-    if role == Role.GNERATOR:
-      # TODO: Replace the random strategy
-      self.childs: list[Tree | None] = [None]
-      self.score_gain = score_gain
-    elif role == Role.PLAYER:
-      self.childs: list[Tree | None] = [None, None, None, None]
-    else:
-      raise ValueError()
-    self.parent = parent
-    self.env = env
-    # How many score could gain from this node
-    self.perf_update_count = 0
-    self.perf = 0.0
-    # How many times this node has been selected
-    self.n = 1
+  def __init__(
+    self,
+    *,
+    parent,
+    env: Env2048,
+    role: Role,
+    probability: float,
+    brother_id: int,
+    moved: bool,
+  ):
+    self.role: Role = role
+    self.children: list[Tree] | None = None
+    self.parent: Tree = parent  # parent node
+    self.brother_id: int = brother_id  # i-th son of the parent node
+    self.env: Env2048 = env
+    self.num_of_visit: int = 0  # Number of visits to this node
+    self.Q: float = 0  # Q value of the node
+    self.probability: float = probability  # Probability of this node being selected
+    self.moved: bool = moved  # Whether move happened from parent to this node
 
-  def is_full_child(self):
+  def update(self, Q: float, num_of_visit: int):
     """
-    Check if all child nodes are filled.
-    Returns True if all child nodes are not None, otherwise False.
+    Update the Q value and number of visits for this node.
     """
-    return all(child is not None for child in self.childs)
-
-  def update_perf(self, score):
-    """
-    Update the performance score of the current node.
-    """
-    self.perf = (self.perf * self.perf_update_count + score) / \
-        (self.perf_update_count + 1)
-    self.perf_update_count += 1
-
-  def debug(self):
-    print(
-      f"Num of non-empty childs: {len([c for c in self.childs if c is not None])}")
-
+    self.Q = (self.Q * self.num_of_visit + Q) / (self.num_of_visit + 1)
+    self.num_of_visit += num_of_visit
 
 ###############################################################################
 # MCT
 ###############################################################################
+
+
 class MCT:
-  def __init__(self):
-    pass
+  def __init__(
+    self,
+    *,
+    baseline_Q: float,
+    select_times: int,
+    p_v_network: PolicyValueNet,
+    device=device,
+  ):
+    self.baseline_Q = baseline_Q  # Baseline Q value for the root node
+    self.select_times = select_times  # Number of times to select a leaf node
+    self.p_v_network = p_v_network  # Policy-Value Network
+    self.device = device  # Device to run the network
+    return
+
   ###############################################################################
   # Part I: Selection
   ###############################################################################
 
-  def select_child_order(self, trees: list[Tree], N: int) -> list[Tree]:
+  def select_leaf(self, cur: Tree) -> Tree:
     """
-    Select a child node from the list of trees.
+    Select a leaf node from the current tree using UCT (Upper Confidence Bound for Trees).
     """
-    if not trees:
-      raise ValueError("No selectable child nodes available.")
-    max_perf = max(tree.perf for tree in trees) + 0.1
-    trees.sort(key=lambda tree: tree.perf / max_perf + UCT_CONSTANT *
-               math.sqrt(math.log(N) / tree.n), reverse=True)
-    return trees
+    # Extract the UCB score for each child node
+    def UCB_score(child: Tree, N: int) -> float:
+      return child.Q + UCT_CONSTANT * child.probability * \
+          math.sqrt(N) / (1 + child.num_of_visit)
 
-  def collect_selectable_childs(self, root: Tree | None):
-    """
-    Collects all selectable child nodes from the root.
-    Returns a list of child nodes that can be selected.
-    """
-    if root is None:
-      return []
-    if root.role == Role.GNERATOR:
-      return self.collect_selectable_childs(root.childs[0])
+    if cur is None:
+      raise ValueError("The current tree is None.")
+    if cur.role == Role.GNERATOR:
+      # If the current node is a generator, return the first child
+      return cur.children[0]
+    elif cur.role == Role.PLAYER:
+      if cur.children is None:
+        return cur
+      N = sum(child.num_of_visit for child in cur.children)
+      UCT_v = [UCB_score(child, N) for child in cur.children]
+      # Sort the 4 children according to UCT_v in descending order
+      sorted_indices = np.argsort(UCT_v)[::-1]
+      for i in sorted_indices:
+        if not cur.children[i].moved:
+          continue
+        return self.select_leaf(cur.children[i])
+      return None
     else:
-      selectable_childs = [root] if not root.is_full_child() else []
-      for child in root.childs:
-        selectable_childs += self.collect_selectable_childs(child)
-      return selectable_childs
+      raise ValueError("Invalid role for the current tree node.")
 
   ###############################################################################
-  # Part II: Expansion
+  # Part II & III: Expansion & Evaluation
   ###############################################################################
 
-  def expand_tree(self, cur: Tree, network: PolicyValueNet | None = None, device=device):
+  def expand_and_evaluate(self, cur: Tree):
     if cur.role == Role.PLAYER:
-      # TODO: Replace a better strategy?
-      state = transform_state(cur.env.observation_space.matrix)
-      shuffled_index = ([network.take_action(state, device=device)] if network else [
-      ]) + list(np.random.permutation(range(4)))
-      for i in shuffled_index:
-        if cur.childs[i] is None:
-          env = copy.deepcopy(cur.env)
-          moved, score_gain = env._merge_all(i)
-          if not moved:
-            continue
-          cur.childs[i] = Tree(parent=cur, env=env, role=Role.GNERATOR,
-                               score_gain=score_gain)
-          return self.expand_tree(cur.childs[i])
-    else:
+      state = encode_state(cur.env.observation_space.matrix).to(self.device)
+      policy, Q_value = self.p_v_network(state)
+      policy = policy[0]
+      cur.update(Q=Q_value.item(), num_of_visit=1)
+      cur.children = []
+      for i in range(4):
+        env = copy.deepcopy(cur.env)
+        moved, _ = env._merge_all(i)
+        cur.children.append(
+          Tree(
+            parent=cur,
+            env=env,
+            role=Role.GNERATOR,
+            probability=policy[i].item(),
+            brother_id=i,
+            moved=moved,  # Whether the node has moved
+          )
+        )
+        self.expand_and_evaluate(cur.children[i])
+    elif cur.role == Role.GNERATOR:
       env = copy.deepcopy(cur.env)
       env._add_new_tile()
-      cur.childs[0] = Tree(parent=cur, env=env,
-                           role=Role.PLAYER, score_gain=0.0)
-      return cur.childs[0]
-    return None
-
-  ###############################################################################
-  # Part III: Simulation
-  ###############################################################################
-
-  def simulate(self, cur: Tree, network: PolicyValueNet | None = None, device=device):
-    env = copy.deepcopy(cur.env)
-    state = transform_state(env.observation_space.matrix)
-    done = env._is_game_over()
-    score = 0
-    move_count = 0
-    while not done and move_count < 16:
-      actions = [network.take_action(state, device=device)] if network else []
-      actions += fix_action_order
-      for i in actions:
-        next_state, reward, done, info = env.step(i)
-        state = transform_state(next_state)
-        if info.moved is False:
-          continue
-        score += reward
-        break
-      move_count += 1
-
-    while not done:
-      actions = fix_action_order
-      for i in actions:
-        next_state, reward, done, info = env.step(i)
-        state = transform_state(next_state)
-        if info.moved is False:
-          continue
-        score += reward
-        break
-      move_count += 1
-    return score, move_count
+      cur.children = []
+      cur.children.append(
+        Tree(
+          parent=cur,
+          env=env,
+          role=Role.PLAYER,
+          probability=1.0,  # Generator always has a single child
+          brother_id=0,
+          moved=True,  # Always True
+        )
+      )
+    else:
+      raise ValueError("Invalid role for the current tree node.")
 
   ###############################################################################
   # Part IV: Backpropagation
   ###############################################################################
 
-  def backpropagation(self, cur: Tree, score):
-    if not cur:
+  def backpropagation(self, cur: Tree, N, Q):
+    if cur is None:
       return
-    if cur.parent is not None and cur.role == Role.PLAYER:
-      score += cur.parent.score_gain
-    cur.update_perf(score)
-    self.backpropagation(cur.parent, score)
+    cur.update(Q=Q, num_of_visit=N)
+    self.backpropagation(cur.parent, N, Q)
 
   ###############################################################################
   # Overview: MCTS Search Algorithm
@@ -216,41 +184,24 @@ class MCT:
   def mct_search(
     self,
     root: Tree,
-    *,
-    network: PolicyValueNet | None = None,
-    select_times,
-    device=device,
   ):
-    total_moves = 0
-    selectable_childs = []
-    for iter in range(select_times):
-      # Step 1: Select a child node
-      selectable_childs = self.collect_selectable_childs(root)
-      ordered_selectable_childs = self.select_child_order(
-        selectable_childs, iter + 1)
-      # Step 2: Expand the tree
-      expanded_tree = None
-      for selected_tree in ordered_selectable_childs:
-        expanded_tree = self.expand_tree(
-          selected_tree, network=network, device=device)
-        if expanded_tree is not None:
-          break
-      if expanded_tree is None:
+    for iter in range(self.select_times):
+      # Step 1: Select a leaf node
+      expanded_leaf_node = self.select_leaf(root)
+      if expanded_leaf_node is None:
+        # If no valid leaf node is found, break the loop
         break
-      # Step 3: Simulate the game from the expanded tree
-      score, moves = self.simulate(
-        expanded_tree, network=network, device=device)
-      total_moves += moves
+      # Step 2 & 3: Expand and evaluate the leaf node
+      self.expand_and_evaluate(expanded_leaf_node)
       # Step 4: Backpropagate the score to the root node
-      self.backpropagation(expanded_tree, score)
+      self.backpropagation(expanded_leaf_node.parent, 1, expanded_leaf_node.Q)
 
-    # Return policy and value
+    # Return policy
     policy = np.array(
-      [child.perf if child is not None else 0.0 for child in root.childs])
-    value = root.perf
-    if policy.sum() > 0:
-      policy = policy / policy.sum()
-    return policy, value, total_moves
+      [child.num_of_visit for child in root.children])
+    policy = policy / policy.sum()
+    value = root.Q
+    return policy, value
 
 
 class ReplayBuffer(Dataset):
@@ -263,7 +214,7 @@ class ReplayBuffer(Dataset):
 
   def add(self, state, policy_target, value_target):
     self.human_states.append(state)
-    self.states.append(transform_state(state))
+    self.states.append(encode_state(state))
     self.policy_targets.append(policy_target)
     self.value_targets.append(value_target)
 
@@ -335,25 +286,46 @@ class ReplayBuffer(Dataset):
 
 
 class Strategy:
-  def __init__(self):
-    pass
+  def __init__(
+    self,
+    *,
+    select_times,
+    baseline_score: float,
+    p_v_network: PolicyValueNet,
+    device=device,
+  ):
+    self.baseline_score = baseline_score  # Baseline Q value for the root node
+    self.select_times = select_times  # Number of times to select a leaf node
+    self.p_v_network = p_v_network  # Policy-Value Network
+    if self.p_v_network is not None:
+      self.p_v_network.eval()
+    self.device = device  # Device to run the network
+    return
 
-  def take_action(self, env, *, network=None, select_times=10, device=device):
-    mct = MCT()
-    tree = Tree(parent=None, env=copy.deepcopy(
-      env), role=Role.PLAYER, score_gain=0.0)
-    policy, value, moves = mct.mct_search(
-      tree, network=network, select_times=select_times, device=device)
+  def take_action(self, env):
+    mct = MCT(
+      baseline_Q=self.baseline_score,
+      select_times=self.select_times,
+      p_v_network=self.p_v_network,
+      device=self.device
+    )
+    root = Tree(
+      parent=None,
+      env=copy.deepcopy(env),
+      role=Role.PLAYER,
+      probability=0,
+      brother_id=0,
+      moved=True,
+    )
+    policy, value = mct.mct_search(root)
 
-    return policy, value, np.argmax(policy), moves
+    return policy, np.argmax(policy), value
 
-  def collect_trajectory(self, replay_buffer: ReplayBuffer, *, network=None, gui=False, collect=True, device=device):
+  def collect_trajectory(self, replay_buffer: ReplayBuffer, *, gui=False, collect=True, sleep_time=0.01):
     """
     Collect a trajectory of actions and rewards from the environment.
     Returns ...
     """
-    if network is not None:
-      network.eval()
     env = Env2048()  # environment
 
     if gui:
@@ -363,26 +335,25 @@ class Strategy:
 
     done = False
     scores = 0
-    total_moves = 0
     while not done:
-      policy, value, action, moves = self.take_action(
-        env, network=network, device=device)
-      total_moves += moves
-      if action == -1:  # No valid move
-        break
+      policy, action, value = self.take_action(env)
       origin_state = copy.deepcopy(env.observation_space.matrix)
       _, reward, done, info = env.step(action)
+      scores += reward
       if info.moved is False:
         print("[BUG] NOT MOVED !!!!!!!!!!!!!!")
       if collect:
-        replay_buffer.add(origin_state, policy, scores + value)
-      scores += reward
+        if not done:
+          replay_buffer.add(origin_state, policy, value)
+        else:
+          value = 1 if scores > self.baseline_score else -1
+          replay_buffer.add(origin_state, policy, value)
       if gui:
         game_ui.score += reward
         game_ui.update_grid_cells()
         game_ui.update_idletasks()
         game_ui.update()
-        time.sleep(0.05)
+        time.sleep(sleep_time)
       if done:
         break
     return scores
@@ -395,13 +366,15 @@ def main():
 
   replay_buffer = ReplayBuffer()
 
-  network = PolicyValueNet(boarder_size, boarder_size,
-                           num_res_blocks=2).to(device)  # neural network
-  # network = None
-  strategy = Strategy()
-  score = strategy.collect_trajectory(replay_buffer, network=network, gui=True)
+  p_v_network = PolicyValueNet(
+    boarder_size, boarder_size).to(device)  # neural network
+
+  strategy = Strategy(baseline_score=200.0,
+                      p_v_network=p_v_network, device=device)
+  score = strategy.collect_trajectory(
+    replay_buffer, gui=False, sleep_time=0.01)
   print(f"Final Score: {score}")
-  # replay_buffer.render()
+  replay_buffer.render()
 
 
 if __name__ == "__main__":
