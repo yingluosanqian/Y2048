@@ -11,8 +11,8 @@ class ConvBlock(nn.Module):
   def __init__(self, in_channels=18, out_channels=256, kernel_size=3):
     super(ConvBlock, self).__init__()
     self.conv1 = nn.Conv2d(in_channels, out_channels,
-                           kernel_size=kernel_size, stride=1, padding=1, dtype=torch.float32)
-    self.bn = nn.BatchNorm2d(out_channels, dtype=torch.float32)
+                           kernel_size=kernel_size, stride=1, padding=1, dtype=torch.float64)
+    self.bn = nn.BatchNorm2d(out_channels, dtype=torch.float64)
 
   def forward(self, x):
     x = self.conv1(x)
@@ -25,11 +25,11 @@ class ResidualBlock(nn.Module):
   def __init__(self, num_channels=256):
     super(ResidualBlock, self).__init__()
     self.conv1 = nn.Conv2d(num_channels, num_channels,
-                           kernel_size=3, stride=1, padding=1, dtype=torch.float32)
-    self.bn1 = nn.BatchNorm2d(num_channels, dtype=torch.float32)
+                           kernel_size=3, stride=1, padding=1, dtype=torch.float64)
+    self.bn1 = nn.BatchNorm2d(num_channels, dtype=torch.float64)
     self.conv2 = nn.Conv2d(num_channels, num_channels,
-                           kernel_size=3, stride=1, padding=1, dtype=torch.float32)
-    self.bn2 = nn.BatchNorm2d(num_channels, dtype=torch.float32)
+                           kernel_size=3, stride=1, padding=1, dtype=torch.float64)
+    self.bn2 = nn.BatchNorm2d(num_channels, dtype=torch.float64)
 
   def forward(self, x):
     residual = x
@@ -50,18 +50,18 @@ class PolicyValueHeads(nn.Module):
 
     # Policy Head
     self.policy_conv = nn.Conv2d(
-      256, 2, kernel_size=1, stride=1, dtype=torch.float32)
-    self.policy_bn = nn.BatchNorm2d(2, dtype=torch.float32)
+      256, 2, kernel_size=1, stride=1, dtype=torch.float64)
+    self.policy_bn = nn.BatchNorm2d(2, dtype=torch.float64)
     self.policy_fc = nn.Linear(
-      2 * self.board_size, 4, dtype=torch.float32)  # 4-direction
+      2 * self.board_size, 4, dtype=torch.float64)  # 4-direction
 
     # Value Head
     self.value_conv = nn.Conv2d(
-      256, 1, kernel_size=1, stride=1, dtype=torch.float32)
-    self.value_bn = nn.BatchNorm2d(1, dtype=torch.float32)
+      256, 1, kernel_size=1, stride=1, dtype=torch.float64)
+    self.value_bn = nn.BatchNorm2d(1, dtype=torch.float64)
     self.value_fc1 = nn.Linear(
-      self.board_size, 256, dtype=torch.float32)  # with flatten input
-    self.value_fc2 = nn.Linear(256, 1, dtype=torch.float32)
+      self.board_size, 256, dtype=torch.float64)  # with flatten input
+    self.value_fc2 = nn.Linear(256, 1, dtype=torch.float64)
 
   def forward(self, x):
     # Shape of x: [batch, 256, grid_n, grid_m]
@@ -96,11 +96,11 @@ class PolicyValueNet(nn.Module):
     return self.policy_value_heads(x)
 
 
-def encode_state(obs: list[list[int]]) -> torch.tensor:
+def encode_state(obs: list[list[int]], unsqueeze=True) -> torch.tensor:
   n = len(obs)
   m = len(obs[0])
   max_exp = 17
-  one_hot = np.zeros((max_exp + 1, n, m), dtype=np.float32)
+  one_hot = np.zeros((max_exp + 1, n, m), dtype=np.float64)
   for i in range(n):
     for j in range(m):
       val = obs[i][j]
@@ -110,7 +110,10 @@ def encode_state(obs: list[list[int]]) -> torch.tensor:
         n = int(np.log2(val))
         if 1 <= n <= max_exp:
           one_hot[n - 1, i, j] = 1.0
-  return torch.from_numpy(one_hot).unsqueeze(0)  # Add batch dimension
+  if unsqueeze:
+    return torch.from_numpy(one_hot).unsqueeze(0)  # Add batch dimension
+  else:
+    return torch.from_numpy(one_hot)
 
 
 # Test
@@ -118,7 +121,7 @@ if __name__ == "__main__":
   grid_n, grid_m = 3, 3  # 4x4 grid for 2048
   net = PolicyValueNet(grid_n, grid_m).to(device)
   dummy_input = torch.randn(
-    18, grid_n, grid_m, dtype=torch.float32, device=device)  # mock
+    18, grid_n, grid_m, dtype=torch.float64, device=device)  # mock
 
   import time
   start_time = time.time()

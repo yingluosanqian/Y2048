@@ -36,7 +36,7 @@ class ReplayBufferDataset(Dataset):
 
   def __getitem__(self, idx):
     sample = self.buffer[idx]
-    return np.array(sample['states'], dtype=np.float32), np.array(sample['actions'], dtype=np.float32), np.array(sample['rewards'], dtype=np.float32)
+    return np.array(sample['states'], dtype=np.float64), np.array(sample['actions'], dtype=np.float64), np.array(sample['rewards'], dtype=np.float64)
 
 ###############################################################################
 # Collecting training data from multiple workers
@@ -160,7 +160,7 @@ def main():
   baseline_score = collect_train_data(
     network=p_v_network,
     replay_buffer=ReplayBuffer(),
-    num_workers=20,
+    num_workers=10,
     baseline_score=0,
   )
   logging.info(f"Initial baseline score: {baseline_score:.2f}")
@@ -174,7 +174,7 @@ def main():
     baseline_score = collect_train_data(
       network=p_v_network,
       replay_buffer=replay_buffer,
-      num_workers=20,
+      num_workers=10,
       baseline_score=baseline_score,
     )
     replay_buffer.save(f"strategy/MCTS/datas/data_{i+1}.txt")
@@ -191,6 +191,14 @@ def main():
       lr=1e-3,
       weight_decay=1e-4
     )
+
+    ###############################################################################
+    # Save the neural network
+    ###############################################################################
+    torch.save(p_v_network.state_dict(),
+               f'strategy/MCTS/models/network_iter_{i + 1}_size_{boarder_size}.pth')
+    torch.save(p_v_network.state_dict(),
+               f'strategy/MCTS/models/network_latest_size_{boarder_size}.pth')
 
 
 if __name__ == "__main__":

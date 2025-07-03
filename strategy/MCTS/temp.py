@@ -71,7 +71,7 @@ def model_test_by_case():
     [2, 16, 4],
   ]
   state = transform_state(chess_board)
-  state = torch.tensor(state, dtype=torch.float32, device=device)
+  state = torch.tensor(state, dtype=torch.float64, device=device)
   state = state.unsqueeze(0)  # Add batch dimension if not present
 
   infer_network = PolicyValueNet(

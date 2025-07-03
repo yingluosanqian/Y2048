@@ -205,7 +205,7 @@ class MCT:
 
 
 class ReplayBuffer(Dataset):
-  def __init__(self, max_size=4096):
+  def __init__(self, max_size=512):
     self.max_size = max_size
     self.human_states = collections.deque()
     self.states = collections.deque()
@@ -214,7 +214,7 @@ class ReplayBuffer(Dataset):
 
   def add(self, state, policy_target, value_target):
     self.human_states.append(state)
-    self.states.append(encode_state(state))
+    self.states.append(encode_state(state, unsqueeze=False))
     self.policy_targets.append(policy_target)
     self.value_targets.append(value_target)
 
