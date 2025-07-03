@@ -216,7 +216,7 @@ class ReplayBuffer(Dataset):
     self.human_states.append(state)
     self.states.append(encode_state(state, unsqueeze=False))
     self.policy_targets.append(policy_target)
-    self.value_targets.append(value_target)
+    self.value_targets.append(float(value_target))
 
   def extend(self, other):
     """
@@ -333,6 +333,7 @@ class Strategy:
       game_ui.update_idletasks()
       game_ui.update()
 
+    temp_datas = []
     done = False
     scores = 0
     while not done:
@@ -343,11 +344,7 @@ class Strategy:
       if info.moved is False:
         print("[BUG] NOT MOVED !!!!!!!!!!!!!!")
       if collect:
-        if not done:
-          replay_buffer.add(origin_state, policy, value)
-        else:
-          value = 1 if scores > self.baseline_score else -1
-          replay_buffer.add(origin_state, policy, value)
+        temp_datas.append((origin_state, policy))
       if gui:
         game_ui.score += reward
         game_ui.update_grid_cells()
@@ -356,6 +353,15 @@ class Strategy:
         time.sleep(sleep_time)
       if done:
         break
+    for origin_state, policy in temp_datas:
+      value = 1 if scores >= self.baseline_score else -1
+      if collect:
+        # Encode the state and add to the replay buffer
+        replay_buffer.add(
+          state=origin_state,
+          policy_target=policy,
+          value_target=value,
+        )
     return scores
 
 
@@ -369,8 +375,12 @@ def main():
   p_v_network = PolicyValueNet(
     boarder_size, boarder_size).to(device)  # neural network
 
-  strategy = Strategy(baseline_score=200.0,
-                      p_v_network=p_v_network, device=device)
+  strategy = Strategy(
+    baseline_score=200.0,
+    select_times=16,
+    p_v_network=p_v_network,
+    device=device,
+  )
   score = strategy.collect_trajectory(
     replay_buffer, gui=False, sleep_time=0.01)
   print(f"Final Score: {score}")

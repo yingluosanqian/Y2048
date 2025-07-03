@@ -75,8 +75,7 @@ def collect_train_data(network, replay_buffer: ReplayBuffer, num_workers, baseli
     for worker_samples, score_list in results:
       replay_buffer.extend(worker_samples)
       scores += score_list
-    avg_score = np.mean(scores)
-  return avg_score
+  return scores
 
 
 def get_dataloader_from_replaybuffer(replay_buffer, batch_size=128, shuffle=True):
@@ -155,12 +154,14 @@ def main():
   ###############################################################################
   # Main training loop
   ###############################################################################
-  baseline_score = collect_train_data(
+  baseline_score, num = 0.0, 0
+  score_list = collect_train_data(
     network=p_v_network,
     replay_buffer=ReplayBuffer(),
     num_workers=10,
     baseline_score=0,
   )
+  baseline_score = (baseline_score * num + sum(score_list)) / (num + len(score_list))
   logging.info(f"Initial baseline score: {baseline_score:.2f}")
   for i in range(100):
     replay_buffer = ReplayBuffer()
@@ -169,12 +170,13 @@ def main():
     # Collect training data and train the neural network
     ###############################################################################
     logging.info(f"Collecting training data, iteration {i+1}...")
-    baseline_score = collect_train_data(
+    score_list = collect_train_data(
       network=p_v_network,
       replay_buffer=replay_buffer,
       num_workers=10,
       baseline_score=baseline_score,
     )
+    baseline_score = (baseline_score * num + sum(score_list)) / (num + len(score_list))
     logging.info(f"Baseline score after iteration {i+1}: {baseline_score:.2f}")
     replay_buffer.save(f"strategy/MCTS/datas/data_{i+1}.txt")
 
