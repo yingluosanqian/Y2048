@@ -36,13 +36,13 @@ def train_by_history():
   )
 
   torch.save(train_network.state_dict(),
-             'strategy/MCTS/models/network_history.pth')
+             f'strategy/MCTS/models/network_history_{boarder_size}.pth')
 
 
 def eval_model_once():
   infer_network = PolicyValueNet(
     boarder_size, boarder_size, num_res_blocks=2).to(device)
-  state_dict = torch.load('strategy/MCTS/models/network_history.pth',
+  state_dict = torch.load(f'strategy/MCTS/models/network_history_size_{boarder_size}.pth',
                           map_location=device,
                           weights_only=True)
   infer_network.load_state_dict(state_dict)
@@ -56,7 +56,7 @@ def eval_model_once():
 def eval_model():
   infer_network = PolicyValueNet(
     boarder_size, boarder_size, num_res_blocks=2).to(device)
-  state_dict = torch.load('strategy/MCTS/models/network_history.pth',
+  state_dict = torch.load(f'strategy/MCTS/models/network_history_size_{boarder_size}.pth',
                           map_location=device,
                           weights_only=True)
   infer_network.load_state_dict(state_dict)
@@ -76,7 +76,7 @@ def model_test_by_case():
 
   infer_network = PolicyValueNet(
     boarder_size, boarder_size, num_res_blocks=2).to(device)
-  state_dict = torch.load('strategy/MCTS/models/network_history.pth',
+  state_dict = torch.load(f'strategy/MCTS/models/network_history_{boarder_size}.pth',
                           map_location=device,
                           weights_only=True)
   infer_network.load_state_dict(state_dict)

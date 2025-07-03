@@ -352,7 +352,8 @@ class Strategy:
     Collect a trajectory of actions and rewards from the environment.
     Returns ...
     """
-    network.eval()
+    if network is not None:
+      network.eval()
     env = Env2048()  # environment
 
     if gui:
@@ -370,7 +371,9 @@ class Strategy:
       if action == -1:  # No valid move
         break
       origin_state = copy.deepcopy(env.observation_space.matrix)
-      _, reward, done, _ = env.step(action)
+      _, reward, done, info = env.step(action)
+      if info.moved is False:
+        print("[BUG] NOT MOVED !!!!!!!!!!!!!!")
       if collect:
         replay_buffer.add(origin_state, policy, scores + value)
       scores += reward

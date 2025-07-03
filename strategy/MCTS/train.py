@@ -58,8 +58,6 @@ def collect_train_data(network, replay_buffer: ReplayBuffer, num_workers=10):
     logging.info(f"sub_buffer_size: {sub_buffer_size}")
     args = []
     for _ in range(num_workers):
-      sub_network = PolicyValueNet(boarder_size, boarder_size, num_res_blocks=2).to(device)
-      sub_network.load_state_dict(network.state_dict())
       args.append((Strategy(), network, sub_buffer_size))
     results = pool.map(_collect_trajectory_worker, args)
     # Flatten and add to replay_buffer
@@ -199,7 +197,7 @@ def main():
       weight_decay=1e-4
     )
 
-    if (i + 1) % 3 == 0:
+    if True:
       logging.info(f"Evaluating model after {i+1} iterations...")
       avg_score = collect_eval_data(train_network)
       logging.info(f"Average score after {i+1} iterations: {avg_score:.2f}")
@@ -209,7 +207,7 @@ def main():
           f"Improvement detected! Saving model with score: {avg_score:.2f}. (Old: {best_avg_score:.2f})")
         best_avg_score = avg_score
         torch.save(train_network.state_dict(),
-                   'strategy/MCTS/models/network_latest_size{boarder_size}.pth')
+                   f'strategy/MCTS/models/network_latest_size_{boarder_size}.pth')
         infer_network.load_state_dict(train_network.state_dict())
       else:
         logging.info(
