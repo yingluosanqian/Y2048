@@ -62,7 +62,7 @@ def collect_train_data(network, replay_buffer: ReplayBuffer, num_workers, baseli
     args = []
     for _ in range(num_workers):
       strategy = Strategy(
-        select_times=10,
+        select_times=20,
         baseline_score=baseline_score,
         p_v_network=network,
         device=device_cpu
