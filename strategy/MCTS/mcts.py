@@ -205,7 +205,7 @@ class MCT:
 
 
 class ReplayBuffer(Dataset):
-  def __init__(self, max_size=512):
+  def __init__(self, max_size=2048):
     self.max_size = max_size
     self.human_states = collections.deque()
     self.states = collections.deque()
