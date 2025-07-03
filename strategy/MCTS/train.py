@@ -59,7 +59,6 @@ def collect_train_data(network, replay_buffer: ReplayBuffer, num_workers, baseli
   with multiprocessing.get_context("spawn").Pool(num_workers) as pool:
     # Each worker gets its own Strategy and collects samples
     sub_buffer_size = (replay_buffer.max_size + num_workers - 1) // num_workers
-    logging.info(f"sub_buffer_size: {sub_buffer_size}")
     args = []
     for _ in range(num_workers):
       strategy = Strategy(
@@ -77,7 +76,6 @@ def collect_train_data(network, replay_buffer: ReplayBuffer, num_workers, baseli
       replay_buffer.extend(worker_samples)
       scores += score_list
     avg_score = np.mean(scores)
-    logging.info(f"Average score from all workers: {avg_score:.2f}")
   return avg_score
 
 
@@ -177,6 +175,7 @@ def main():
       num_workers=10,
       baseline_score=baseline_score,
     )
+    logging.info(f"Baseline score after iteration {i+1}: {baseline_score:.2f}")
     replay_buffer.save(f"strategy/MCTS/datas/data_{i+1}.txt")
 
     ###############################################################################
