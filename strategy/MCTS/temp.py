@@ -5,8 +5,6 @@ from strategy.MCTS.network import PolicyValueNet
 from const import const_device as device
 from const import const_boarder_size as boarder_size
 from strategy.MCTS.train import train_nn
-from strategy.MCTS.train import collect_eval_data
-from strategy.MCTS.mcts import transform_state
 from const import const_action as ACTION
 from strategy.MCTS.mcts import Strategy
 from const import const_device_cpu as device_cpu
@@ -90,11 +88,18 @@ def model_test_by_case():
   print(f"Policy: {policy_view}")
 
 
+def view_table():
+  replay_buffer = ReplayBuffer(max_size=2048)
+  replay_buffer.load("strategy/MCTS/datas/data_2.txt")
+  replay_buffer.render()
+
+
 def main():
   # train_by_history()
   # eval_model()
   eval_model_once()
   # model_test_by_case()
+  # view_table()
 
 
 if __name__ == "__main__":

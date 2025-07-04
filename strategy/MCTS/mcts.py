@@ -128,7 +128,8 @@ class MCT:
   def expand_and_evaluate(self, cur: Tree):
     if cur.role == Role.PLAYER:
       state = encode_state(cur.env.observation_space.matrix).to(self.device)
-      policy, Q_value = self.p_v_network(state)
+      with torch.no_grad():
+        policy, Q_value = self.p_v_network(state)
       policy = policy[0]
       cur.update(Q=Q_value.item(), num_of_visit=1)
       cur.children = []
@@ -289,16 +290,16 @@ class Strategy:
   def __init__(
     self,
     *,
+    temperature: float,
     select_times,
     baseline_score: float,
     p_v_network: PolicyValueNet,
     device=device,
   ):
+    self.temperature = temperature  # Temperature for exploration
     self.baseline_score = baseline_score  # Baseline Q value for the root node
     self.select_times = select_times  # Number of times to select a leaf node
     self.p_v_network = p_v_network  # Policy-Value Network
-    if self.p_v_network is not None:
-      self.p_v_network.eval()
     self.device = device  # Device to run the network
     return
 
@@ -339,10 +340,12 @@ class Strategy:
     while not done:
       policy, action, value = self.take_action(env)
       origin_state = copy.deepcopy(env.observation_space.matrix)
+      if random.random() < self.temperature:
+        # Use softmax to select action with temperature
+        action = np.random.choice(
+          fix_action_order, p=policy / policy.sum())
       _, reward, done, info = env.step(action)
       scores += reward
-      if info.moved is False:
-        print("[BUG] NOT MOVED !!!!!!!!!!!!!!")
       if collect:
         temp_datas.append((origin_state, policy))
       if gui:
@@ -352,16 +355,23 @@ class Strategy:
         game_ui.update()
         time.sleep(sleep_time)
       if done:
+        print("!!!")
+        if gui:
+          time.sleep(1.0)
         break
     for origin_state, policy in temp_datas:
       value = 1 if scores >= self.baseline_score else -1
+      # value = env._eval_value()
       if collect:
         # Encode the state and add to the replay buffer
-        replay_buffer.add(
-          state=origin_state,
-          policy_target=policy,
-          value_target=value,
-        )
+        for rotate_times in range(4):
+          new_state, new_policy = Env2048.rotate(
+            origin_state, policy, rotate_times)
+          replay_buffer.add(
+            state=new_state,
+            policy_target=new_policy,
+            value_target=value,
+          )
     return scores
 
 
@@ -372,17 +382,23 @@ def main():
 
   replay_buffer = ReplayBuffer()
 
+  
   p_v_network = PolicyValueNet(
-    boarder_size, boarder_size).to(device)  # neural network
+    boarder_size, boarder_size).to(device)
+  state_dict = torch.load(f'strategy/MCTS/models/network_latest_size_{boarder_size}.pth',
+                          map_location=device,
+                          weights_only=True)
+  p_v_network.load_state_dict(state_dict)
 
   strategy = Strategy(
     baseline_score=200.0,
     select_times=16,
     p_v_network=p_v_network,
     device=device,
+    temperature=0
   )
   score = strategy.collect_trajectory(
-    replay_buffer, gui=False, sleep_time=0.01)
+    replay_buffer, gui=True, sleep_time=0.01)
   print(f"Final Score: {score}")
   replay_buffer.render()
 

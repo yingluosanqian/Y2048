@@ -69,7 +69,8 @@ class PolicyValueHeads(nn.Module):
     # --- Policy Head ---
     p = F.relu(self.policy_bn(self.policy_conv(x)))  # [B, 2, grid_n, grid_m]
     p = p.view(-1, 2 * self.board_size)  # flatten
-    policy_logits = F.softmax(self.policy_fc(p), dim=1)  # [B, 4]
+    policy_logits = self.policy_fc(p)  # [B, 4]
+    # policy_logits = F.softmax(self.policy_fc(p), dim=1)  # [B, 4]
 
     # --- Value Head ---
     v = F.relu(self.value_bn(self.value_conv(x)))  # [B, 1, grid_n, grid_m]

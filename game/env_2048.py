@@ -141,3 +141,19 @@ class Env2048:
         if j < self.size - 1 and self.matrix[i][j] == self.matrix[i][j + 1]:
           return False
     return True
+  
+  def _eval_value(self):
+    score = 0.0
+    max_level = 17
+    max_in_matrix = max(max(row) for row in self.matrix)
+    score += np.log2(max_in_matrix + 1) / max_level
+    sum_of_tiles = sum(sum(row) for row in self.matrix) - max_in_matrix
+    score += min(1, sum_of_tiles / max_in_matrix) * (1 / 17)
+    return score
+  
+  @classmethod
+  def rotate(cls, matrix, policy, rotate_times):
+    for _ in range(rotate_times % 4):
+      matrix = [list(row) for row in zip(*matrix[::-1])]
+      policy = [policy[3], policy[2], policy[0], policy[1]]
+    return matrix, policy

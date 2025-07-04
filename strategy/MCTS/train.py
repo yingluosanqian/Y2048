@@ -53,15 +53,23 @@ def _collect_trajectory_worker(args):
   return local_buffer, scores
 
 
-def collect_train_data(network, replay_buffer: ReplayBuffer, num_workers, baseline_score):
+def collect_train_data(
+  network,
+  replay_buffer: ReplayBuffer,
+  num_workers,
+  baseline_score,
+  temperature,
+):
   # Ensure the network is on CPU for multiprocessing
   network = network.to(device_cpu)
   with multiprocessing.get_context("spawn").Pool(num_workers) as pool:
     # Each worker gets its own Strategy and collects samples
     sub_buffer_size = (replay_buffer.max_size + num_workers - 1) // num_workers
+    logging.info(f"Sub buffer size for each worker: {sub_buffer_size}")
     args = []
     for _ in range(num_workers):
       strategy = Strategy(
+        temperature=temperature,
         select_times=20,
         baseline_score=baseline_score,
         p_v_network=network,
@@ -154,16 +162,20 @@ def main():
   ###############################################################################
   # Main training loop
   ###############################################################################
-  baseline_score, num = 0.0, 0
+  baseline_score, avg_score, num = 0.0, 0.0, 0
+  logging.info(f"Calculate initial baseline score...")
   score_list = collect_train_data(
     network=p_v_network,
     replay_buffer=ReplayBuffer(),
     num_workers=10,
-    baseline_score=0,
+    baseline_score=baseline_score,
+    temperature=0
   )
-  baseline_score = (baseline_score * num + sum(score_list)) / (num + len(score_list))
+  avg_score = (avg_score * num + sum(score_list)) / (num + len(score_list))
+  baseline_score = max(baseline_score, avg_score)
+  num += len(score_list)
   logging.info(f"Initial baseline score: {baseline_score:.2f}")
-  for i in range(100):
+  for i in range(200):
     replay_buffer = ReplayBuffer()
 
     ###############################################################################
@@ -175,9 +187,13 @@ def main():
       replay_buffer=replay_buffer,
       num_workers=10,
       baseline_score=baseline_score,
+      temperature=0.1 if i < 5 else 0.0,
     )
-    baseline_score = (baseline_score * num + sum(score_list)) / (num + len(score_list))
+    avg_score = (avg_score * num + sum(score_list)) / (num + len(score_list))
+    baseline_score = max(baseline_score, avg_score)
+    num += len(score_list)
     logging.info(f"Baseline score after iteration {i+1}: {baseline_score:.2f}")
+    logging.info(f"Average score after iteration {i+1}: {avg_score:.2f}")
     replay_buffer.save(f"strategy/MCTS/datas/data_{i+1}.txt")
 
     ###############################################################################
@@ -187,8 +203,8 @@ def main():
     train_nn(
       network=p_v_network,
       replay_buffer=replay_buffer,
-      epochs=30,
-      batch_size=128,
+      epochs=15,
+      batch_size=256,
       lr=1e-3,
       weight_decay=1e-4
     )
