@@ -57,7 +57,6 @@ def collect_train_data(
   network,
   replay_buffer: ReplayBuffer,
   num_workers,
-  baseline_score,
   temperature,
 ):
   # Ensure the network is on CPU for multiprocessing
