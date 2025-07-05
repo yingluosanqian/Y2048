@@ -49,7 +49,7 @@ def _collect_trajectory_worker(args):
   local_buffer = ReplayBuffer(max_size=buffer_size)
   scores = []
   while len(local_buffer) < buffer_size:
-    scores.append(strategy.collect_trajectory(local_buffer, gui=False))
+    scores.append(strategy.collect_trajectory(replay_buffer=local_buffer, gui=False))
   return local_buffer, scores
 
 
@@ -69,9 +69,8 @@ def collect_train_data(
     args = []
     for _ in range(num_workers):
       strategy = Strategy(
+        simulation_times=20,
         temperature=temperature,
-        select_times=20,
-        baseline_score=baseline_score,
         p_v_network=network,
         device=device_cpu
       )
@@ -115,6 +114,7 @@ def train_nn(
   optimizer = optim.Adam(network.parameters(), lr=lr,
                          weight_decay=weight_decay)
 
+  network.train()  # Set the network to training mode
   for epoch in range(epochs):
     total_policy_loss, total_value_loss = 0.0, 0.0
     for batch_idx, (inputs, policy_target, value_target) in enumerate(dataloader):
@@ -162,19 +162,6 @@ def main():
   ###############################################################################
   # Main training loop
   ###############################################################################
-  baseline_score, avg_score, num = 0.0, 0.0, 0
-  logging.info(f"Calculate initial baseline score...")
-  score_list = collect_train_data(
-    network=p_v_network,
-    replay_buffer=ReplayBuffer(),
-    num_workers=10,
-    baseline_score=baseline_score,
-    temperature=0
-  )
-  avg_score = (avg_score * num + sum(score_list)) / (num + len(score_list))
-  baseline_score = max(baseline_score, avg_score)
-  num += len(score_list)
-  logging.info(f"Initial baseline score: {baseline_score:.2f}")
   for i in range(200):
     replay_buffer = ReplayBuffer()
 
@@ -182,18 +169,14 @@ def main():
     # Collect training data and train the neural network
     ###############################################################################
     logging.info(f"Collecting training data, iteration {i+1}...")
+    temperature = 0.1 if i < 10 else 0.01
     score_list = collect_train_data(
-      network=p_v_network,
       replay_buffer=replay_buffer,
+      temperature=temperature,
+      network=p_v_network,
       num_workers=10,
-      baseline_score=baseline_score,
-      temperature=0.1 if i < 5 else 0.0,
     )
-    avg_score = (avg_score * num + sum(score_list)) / (num + len(score_list))
-    baseline_score = max(baseline_score, avg_score)
-    num += len(score_list)
-    logging.info(f"Baseline score after iteration {i+1}: {baseline_score:.2f}")
-    logging.info(f"Average score after iteration {i+1}: {avg_score:.2f}")
+    logging.info(f"Average score after iteration {i+1}: {np.mean(score_list):.2f}")
     replay_buffer.save(f"strategy/MCTS/datas/data_{i+1}.txt")
 
     ###############################################################################

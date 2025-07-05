@@ -32,11 +32,24 @@ class Env2048:
     self._add_new_tile()
     self._add_new_tile()
     return self.observation_space.matrix
+  
+  def available_actions(self):
+    actions = []
+    for action in range(4):
+      temp_matrix = [row[:] for row in self.matrix]
+      moved, _ = self._merge_all(action)
+      if moved:
+        actions.append(action)
+      self.matrix = temp_matrix  # Restore the original matrix
+    return actions
 
   def render(self):
     print("Env 2048 State:")
     for row in self.matrix:
       print(" ".join(f"{num:>5}" for num in row))
+
+  def sample(self):
+    return self.rng.choice(self.available_actions())
 
   def close(self):
     pass
